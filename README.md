@@ -1,9 +1,3 @@
-Đây là file **`README.md`** hoàn chỉnh, chuyên nghiệp và đáp ứng **100% yêu cầu** của file PDF (bao gồm Docker setup, Architecture, API Docs và Trade-offs).
-
-Bạn chỉ cần tạo file `README.md` ở thư mục gốc và **Copy - Paste** toàn bộ nội dung dưới đây vào:
-
----
-
 ```markdown
 # 🚀 Edtronaut - Live Code Execution Backend
 > **Author:** Dang Nguyen Gia Bao
@@ -179,44 +173,5 @@ Poll this endpoint to get the result.
   "stderr": "",
   "executionTime": 12
 }
-
-```
-
-
-
----
-
-## 📐 Design Decisions & Trade-offs
-
-### 1. Why Async Queue (Redis)?
-
-Code execution is CPU-intensive and unpredictable. Running user code in the main HTTP thread would block the **Node.js Event Loop**, causing the API to hang for other users.
-
-* **Solution:** I decoupled the **Request** (API) from the **Execution** (Worker). The API pushes a job to Redis and responds immediately. The Worker picks up the job when resources are available.
-
-### 2. Reliability & Safety
-
-* **Timeout Guard:** The worker implements a strict **5-second timeout** for code execution. If the user code enters an infinite loop, the process is killed automatically to preserve system resources.
-* **Error Handling:** The system captures both `stderr` and runtime exceptions, updating the database status to `FAILED` so the user knows what went wrong.
-
-### 3. Database Strategy
-
-I chose **PostgreSQL** with **Prisma** over NoSQL because the relationship between `Sessions` and `Executions` is structured and requires data integrity.
-
-### 4. Limitations & Future Improvements
-
-* **Isolation:** Currently, the system uses Node.js `child_process`. While fast, it is not fully isolated. In a production environment, I would upgrade this to **Docker-in-Docker** or **Firecracker MicroVMs** to prevent malicious file system access.
-* **Real-time:** Currently uses polling. I would implement **WebSockets (Socket.io)** to push results instantly to the client.
-
----
-
-### ✅ Checklist for Reviewers
-
-* [x] **Dockerized:** `docker-compose.yml` included.
-* [x] **Async Processing:** Uses BullMQ & Redis.
-* [x] **Clean Architecture:** Separated Controllers, Workers, and Config.
-* [x] **Bonus:** Includes a UI for easy testing.
-
-```
 
 ```
