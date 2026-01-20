@@ -1,5 +1,5 @@
 # 🚀 Edtronaut - Live Code Execution Backend
-> **Author: Dang Nguyen Gia Bao
+> Author: Dang Nguyen Gia Bao
 
 > Backend Engineering Intern Assignment
 
@@ -70,6 +70,13 @@ Visit http://localhost:3000 to open the demo UI.
 - Queue name: code-execution
 - Status lifecycle: QUEUED → RUNNING → COMPLETED or FAILED or TIMEOUT (5s guard)
 - Non-zero exit code marks FAILED; stderr is preserved. Temp file is cleaned after run.
+
+## 🧭 Design notes (mini DESIGN.md)
+- Architecture: API enqueues work; Worker pulls jobs and runs code; DB stores sessions/executions; Redis backs BullMQ. Components are decoupled via the queue.
+- Reliability: execution state is persisted (QUEUED/RUNNING/COMPLETED/FAILED/TIMEOUT); worker uses a 5s timeout; graceful shutdown closes HTTP server, Prisma, Redis, and worker to reduce orphaned connections.
+- Data model: CodeSession (id, status, timestamps) has many Executions (id, sessionId, code, language, status, stdout, stderr, executionTime, createdAt). See prisma/schema.prisma.
+- Scalability: add more workers to scale execution throughput; Redis is the single queue; API is stateless and can be horizontally scaled. Postgres indexes on ids (default) handle lookups by executionId/sessionId.
+- Trade-offs: no true sandbox (unsafe for untrusted code); timeout-based guard only; Redis/Postgres are single points unless clustered; code size capped at 10k chars to bound payload/IO.
 
 ## 🚧 Notes for interns
 - This is not a security sandbox; do not run untrusted code in production.
