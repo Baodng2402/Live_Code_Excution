@@ -1,5 +1,5 @@
 # 🚀 Edtronaut - Live Code Execution Backend
-> **Author: Dang Nguyen Gia Bao
+> Author: Dang Nguyen Gia Bao
 
 > Backend Engineering Intern Assignment
 
