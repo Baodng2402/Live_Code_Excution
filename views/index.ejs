@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Edtronaut Live Code</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+    <style>
+      body {
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .navbar {
+        background-color: #252526;
+        border-bottom: 1px solid #333;
+      }
+      .navbar-item.brand {
+        font-weight: bold;
+        color: #00d1b2;
+        letter-spacing: 1px;
+      }
+
+      .main-container {
+        flex: 1;
+        padding: 20px;
+        display: flex;
+        gap: 20px;
+      }
+      .editor-container,
+      .output-container {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* Fake Code Editor */
+      .code-area {
+        flex: 1;
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+        border: 1px solid #333;
+        font-family: "Fira Code", monospace;
+        font-size: 14px;
+        padding: 15px;
+        resize: none;
+        outline: none;
+        border-radius: 4px;
+        line-height: 1.5;
+      }
+      .code-area:focus {
+        border-color: #00d1b2;
+      }
+
+      .terminal {
+        flex: 1;
+        background-color: #000;
+        color: #00ff00;
+        font-family: "Fira Code", monospace;
+        padding: 15px;
+        border-radius: 4px;
+        border: 1px solid #333;
+        overflow-y: auto;
+        white-space: pre-wrap;
+      }
+      .terminal.error {
+        color: #ff3860;
+      }
+
+      .control-panel {
+        margin-bottom: 10px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="navbar" role="navigation" aria-label="main navigation">
+      <div class="navbar-brand">
+        <a class="navbar-item brand" href="#">
+          <i class="fas fa-code"></i>&nbsp; LIVE CODE EXECUTION
+        </a>
+      </div>
+    </nav>
+
+    <div class="main-container">
+      <div class="editor-container">
+        <div class="control-panel">
+          <div class="select is-small is-dark">
+            <select id="languageSelect">
+              <option value="javascript">JavaScript (Node.js)</option>
+              <option value="python">Python 3</option>
+            </select>
+          </div>
+          <button
+            class="button is-primary is-small"
+            id="runBtn"
+            onclick="runCode()"
+          >
+            <span class="icon"><i class="fas fa-play"></i></span>
+            <span>Run Code</span>
+          </button>
+          <span id="statusTag" class="tag is-black">Ready</span>
+        </div>
+        <textarea class="code-area" id="codeEditor" spellcheck="false">
+ Enter your code here...
+Example: console.log("Hello from Edtronaut!");
+</textarea
+        >
+      </div>
+
+      <div class="output-container">
+        <div class="control-panel">
+          <h6 class="title is-6 has-text-grey">TERMINAL OUTPUT</h6>
+        </div>
+        <div class="terminal" id="terminalOutput">Waiting for execution...</div>
+      </div>
+    </div>
+
+    <script>
+      let sessionId = null;
+
+      async function initSession() {
+        try {
+          const res = await fetch("/api/code-sessions", { method: "POST" });
+          const data = await res.json();
+          sessionId = data.session_id;
+          console.log("Session Created:", sessionId);
+        } catch (err) {
+          console.error("Lỗi tạo session:", err);
+          document.getElementById("statusTag").className = "tag is-danger";
+          document.getElementById("statusTag").innerText = "Connection Error";
+        }
+      }
+      window.onload = initSession;
+
+      async function runCode() {
+        if (!sessionId) {
+          alert("Session chưa sẵn sàng!");
+          return;
+        }
+
+        const code = document.getElementById("codeEditor").value;
+        const language = document.getElementById("languageSelect").value;
+        const btn = document.getElementById("runBtn");
+        const terminal = document.getElementById("terminalOutput");
+        const statusTag = document.getElementById("statusTag");
+
+        btn.classList.add("is-loading");
+        terminal.innerText = "Processing...";
+        terminal.classList.remove("error");
+        statusTag.className = "tag is-warning";
+        statusTag.innerText = "Queued";
+
+        try {
+          const runRes = await fetch(`/api/code-sessions/${sessionId}/run`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code, language }),
+          });
+          const runData = await runRes.json();
+
+          if (runData.error) throw new Error(runData.error);
+
+          pollResult(runData.execution_id);
+        } catch (err) {
+          terminal.innerText = "Error: " + err.message;
+          terminal.classList.add("error");
+          resetUI();
+        }
+      }
+
+      async function pollResult(executionId) {
+        const terminal = document.getElementById("terminalOutput");
+        const statusTag = document.getElementById("statusTag");
+
+        const interval = setInterval(async () => {
+          try {
+            const res = await fetch(`/api/executions/${executionId}`);
+            if (res.status === 404) return; // Chưa tìm thấy thì đợi tiếp
+
+            const data = await res.json();
+
+            statusTag.innerText = data.status;
+
+            if (
+              data.status === "COMPLETED" ||
+              data.status === "FAILED" ||
+              data.status === "TIMEOUT"
+            ) {
+              clearInterval(interval);
+              resetUI();
+
+              if (data.status === "COMPLETED") {
+                terminal.innerText =
+                  data.stdout || "Code ran successfully with no output.";
+                statusTag.className = "tag is-success";
+              } else {
+                terminal.innerText = data.stderr || "Unknown Error";
+                terminal.classList.add("error");
+                statusTag.className = "tag is-danger";
+              }
+            } else {
+              statusTag.className = "tag is-info";
+            }
+          } catch (e) {
+            clearInterval(interval);
+            resetUI();
+          }
+        }, 1000);
+      }
+
+      function resetUI() {
+        document.getElementById("runBtn").classList.remove("is-loading");
+      }
+    </script>
+  </body>
+</html>
