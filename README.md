@@ -1,18 +1,10 @@
-```markdown
 # 🚀 Edtronaut - Live Code Execution Backend
-> **Author:** Dang Nguyen Gia Bao
-> **Role:** Backend Engineering Intern Assignment
+> Author: Dang Nguyen Gia Bao
+
+> Backend Engineering Intern Assignment
 
 ## 📖 Overview
-This project is a backend system designed to securely execute user-submitted code asynchronously. It solves the problem of blocking HTTP requests by offloading code execution to a background worker using a message queue.
-
-The system features a **Non-blocking Architecture** and includes a **Live UI Demo** for testing.
-
----
-
-## 🏗 System Architecture
-
-The system follows a producer-consumer pattern to decouple HTTP handling from code execution.
+Backend to submit and execute code asynchronously. HTTP requests stay fast by pushing work to a queue and processing in a worker.
 
 ```mermaid
 graph LR
@@ -20,158 +12,73 @@ graph LR
     API -->|2. Create Record| DB[(PostgreSQL)]
     API -->|3. Push Job| Redis[(Redis Queue)]
     API -->|4. Return 'QUEUED'| User
-    
     Worker[Worker Service] -->|5. Pop Job| Redis
-    Worker -->|6. Execute Code| Sandbox[Node/Python]
-    Sandbox -->|7. Output| Worker
+    Worker -->|6. Execute Code| Runtime[Node/Python]
+    Runtime -->|7. Output| Worker
     Worker -->|8. Update Status| DB
-    
     User -->|9. Poll Status| API
-
 ```
 
-## 🧩 Tech Stack
+## 🧩 Stack
+- Node.js, TypeScript, Express
+- BullMQ + Redis for queueing
+- Prisma + PostgreSQL for persistence
+- EJS demo page (views/index.ejs)
 
-* **Runtime:** Node.js, TypeScript
-* **Framework:** Express.js
-* **Queue:** BullMQ + Redis (Asynchronous Processing)
-* **Database:** Prisma + PostgreSQL (Persistence)
-* **DevOps:** Docker & Docker Compose
-* **Frontend:** EJS + Bulma CSS (Simple Demo UI)
+## ⚙️ Prerequisites
+- Node.js >= 18, npm
+- PostgreSQL running and reachable via DATABASE_URL
+- Redis running (defaults: localhost:6379)
 
----
-
-## 📂 Project Structure
-
-The codebase follows a clear separation of concerns:
-
-```
-src/
-├── config/         # Database (Prisma) & Redis Queue configuration
-├── controllers/    # API Logic (Producer & Validation)
-├── routes/         # API Route Definitions
-├── worker.ts       # Background Worker (Consumer - Processes jobs)
-├── server.ts       # API Server Entry Point
-└── views/          # EJS Templates for Demo UI
-docker-compose.yml  # Infrastructure Setup (DB, Redis, App)
-
-```
-
----
-
-## 🐳 Run with Docker (Recommended)
-
-This is the fastest way to run the full system (Postgres + Redis + API + Worker) with one command.
-
-**1. Start the System:**
-
+## 🔧 Setup
+1) Install dependencies
 ```bash
-docker-compose up -d --build
-
+npm install
 ```
 
-**2. Initialize Database:**
-Run the migration command inside the API container:
-
+2) Configure environment (.env)
 ```bash
-docker-compose exec api npx prisma migrate deploy
-
-```
-
-**3. Access the Application:**
-
-* **Live Demo UI:** [http://localhost:3000](https://www.google.com/search?q=http://localhost:3000)
-* **API Endpoint:** `http://localhost:3000/api`
-
----
-
-## ⚙️ Manual Setup (Local Development)
-
-If you prefer running locally without Docker containers for the app:
-
-**1. Prerequisites**
-
-* Node.js >= 18
-* PostgreSQL & Redis running locally.
-
-**2. Configuration**
-Create a `.env` file in the root directory:
-
-```env
 PORT=3000
-DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/edtronaut_db?schema=public"
+DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/dbname"
 REDIS_HOST=localhost
 REDIS_PORT=6379
-
+# REDIS_PASSWORD=your_password   # optional
 ```
 
-**3. Installation & Run**
-
+3) Apply migrations and generate client
 ```bash
-# Install dependencies
-npm install
-
-# Setup Database
-npx prisma migrate dev --name init
-
-# Run API & Worker concurrently
-npm run dev
-
+npx prisma migrate deploy
+npx prisma generate
 ```
 
----
+## ▶️ Run
+- API server: `npm run api`
+- Worker: `npm run worker`
+- Both: `npm run dev`
 
-## 🌐 API Documentation
+Visit http://localhost:3000 to open the demo UI.
 
-### 1. Create Session
+## 🌐 API
+- POST /api/code-sessions → create a session. Response: { session_id, status }
+- POST /api/code-sessions/:sessionId/run
+  - Body: { code: string, language: "javascript" | "python" }
+  - Limits: max 10,000 characters; only the above languages.
+  - Response: { execution_id, status: "QUEUED" }
+- GET /api/executions/:executionId → returns execution record with status/stdout/stderr.
 
-Initialize a new coding session.
+## 🛠 Worker behavior
+- Queue name: code-execution
+- Status lifecycle: QUEUED → RUNNING → COMPLETED or FAILED or TIMEOUT (5s guard)
+- Non-zero exit code marks FAILED; stderr is preserved. Temp file is cleaned after run.
 
-* **POST** `/api/code-sessions`
-* **Response:**
-```json
-{ "session_id": "uuid...", "status": "ACTIVE" }
+## 🧭 Design notes (mini DESIGN.md)
+- Architecture: API enqueues work; Worker pulls jobs and runs code; DB stores sessions/executions; Redis backs BullMQ. Components are decoupled via the queue.
+- Reliability: execution state is persisted (QUEUED/RUNNING/COMPLETED/FAILED/TIMEOUT); worker uses a 5s timeout; graceful shutdown closes HTTP server, Prisma, Redis, and worker to reduce orphaned connections.
+- Data model: CodeSession (id, status, timestamps) has many Executions (id, sessionId, code, language, status, stdout, stderr, executionTime, createdAt). See prisma/schema.prisma.
+- Scalability: add more workers to scale execution throughput; Redis is the single queue; API is stateless and can be horizontally scaled. Postgres indexes on ids (default) handle lookups by executionId/sessionId.
+- Trade-offs: no true sandbox (unsafe for untrusted code); timeout-based guard only; Redis/Postgres are single points unless clustered; code size capped at 10k chars to bound payload/IO.
 
-```
-
-
-
-### 2. Execute Code (Async)
-
-Submit code for execution. The server returns immediately without waiting for the result.
-
-* **POST** `/api/code-sessions/:sessionId/run`
-* **Body:**
-```json
-{
-  "code": "console.log('Hello Edtronaut');",
-  "language": "javascript" 
-}
-
-```
-
-
-* **Supported Languages:** `javascript` (Node.js), `python`.
-* **Response:**
-```json
-{ "execution_id": "uuid...", "status": "QUEUED" }
-
-```
-
-
-
-### 3. Get Execution Status
-
-Poll this endpoint to get the result.
-
-* **GET** `/api/executions/:executionId`
-* **Response (Completed):**
-```json
-{
-  "status": "COMPLETED",
-  "stdout": "Hello Edtronaut\n",
-  "stderr": "",
-  "executionTime": 12
-}
-
-```
+## 🚧 Notes for interns
+- This is not a security sandbox; do not run untrusted code in production.
+- Configuration now comes from env; adjust PORT/Redis/Postgres there.
+- Keep code changes small and validated; consider adding lint/tests if extending further.
